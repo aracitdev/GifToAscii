@@ -1,0 +1,12 @@
+*.gif
+bin/
+obj/
+*.txt
+*.bmp
+*.exe
+*.o
+*.cbp
+*.depend
+*.layout
+*.ttf
+*.out
