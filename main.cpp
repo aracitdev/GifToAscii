@@ -10,7 +10,7 @@ std::string ASCIITable=" .:-=+*#%@";
 //" .-*:o+8&#@";
 //" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
 
-bool ConvertToAscii(const std::string& inputFile, sf::Vector2f outScale, std::vector<std::vector<std::vector<std::pair<uint8_t, sf::Color>>>>& outPixels, std::vector<uint32_t>& delays, bool useColor, sf::Color fillColor, float speed)
+bool ConvertToAscii(const std::string& inputFile, sf::Vector2f outScale, std::vector<std::vector<std::vector<std::pair<uint8_t, sf::Color>>>>& outPixels, std::vector<uint32_t>& delays, bool useColor, sf::Color fillColor, float speed, bool inverse)
 {
     std::vector<Magick::Image> imageList;
     Magick::readImages( &imageList, inputFile );  //read frames and coalesce them
@@ -43,8 +43,10 @@ bool ConvertToAscii(const std::string& inputFile, sf::Vector2f outScale, std::ve
                     outPixels[counter][counterx][countery].first = ' ';
                 else
                 {
-                    outPixels[counter][counterx][countery].first=(pixels[index] * 0.3 + pixels[index + 1] *0.59 + pixels[index+2] * 0.11)/QuantumRange * 255.0f;
-                //outPixels[counter][counterx][countery].first=((pixels[index]+pixels[index+1]+pixels[index+2])/3.0) / QuantumRange * 255.0f;
+                    //outPixels[counter][counterx][countery].first=(pixels[index] * 0.3 + pixels[index + 1] *0.59 + pixels[index+2] * 0.11)/QuantumRange * 255.0f;
+                    outPixels[counter][counterx][countery].first=((pixels[index]+pixels[index+1]+pixels[index+2])/3.0) / QuantumRange * 255.0f;
+                    if(inverse)
+                        outPixels[counter][counterx][countery].first=255.0-outPixels[counter][counterx][countery].first;
                     outPixels[counter][counterx][countery].first= ASCIITable.at((outPixels[counter][counterx][countery].first/256.0) * ASCIITable.size());
                     outPixels[counter][counterx][countery].second = fillColor;
                     if(useColor)
@@ -133,7 +135,7 @@ bool WriteAscii(const std::string& outfile, std::vector<std::vector<std::pair<ui
 }
 
 
-bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& inFile, std::string& outFile, std::string& fontFile, uint32_t& pointSize, bool& userColor, sf::Color& backColor, bool& asciiOut, sf::Color& fillColor, float& dt)
+bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& inFile, std::string& outFile, std::string& fontFile, uint32_t& pointSize, bool& userColor, sf::Color& backColor, bool& asciiOut, sf::Color& fillColor, float& dt, bool& inverse)
 {
     for(int32_t currentArg=1; currentArg < argc; currentArg++)
     {
@@ -164,6 +166,11 @@ bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& i
                 return false;
             }
             dt = std::stof(argv[++currentArg]);
+        }
+        else
+        if(argtype == "--inverse")
+        {
+            inverse=true;
         }
         else
         if(argtype == "--font")
@@ -264,16 +271,17 @@ int main(int argc, char* argv[])
     std::string fontFile = "font.ttf";
     sf::Color backColor=sf::Color::Black;
     sf::Color fillColor=sf::Color::White;
+    bool inverse=false;
     float speed=1.0;
     bool asciiOut=false;
 
-    if(!HandleArguments(argc, argv, scale, inFile, outFile, fontFile, pointSize, useColor, backColor, asciiOut, fillColor, speed))
+    if(!HandleArguments(argc, argv, scale, inFile, outFile, fontFile, pointSize, useColor, backColor, asciiOut, fillColor, speed, inverse))
         return 0;
 
     std::cout <<"Converting.\n";
     std::vector<std::vector<std::vector<std::pair<uint8_t, sf::Color>>>> ascii;
     std::vector<uint32_t> delays;
-    if(!ConvertToAscii(inFile, scale,ascii, delays, useColor,fillColor, speed))
+    if(!ConvertToAscii(inFile, scale,ascii, delays, useColor,fillColor, speed, inverse))
         return 0;
     std::cout <<"Generating.\n";
     if(asciiOut)
