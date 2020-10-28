@@ -92,7 +92,7 @@ bool GenerateGif(const std::string& fontFile, std::vector<std::vector<std::vecto
         image.saveToFile("tmp.tga");
         outImages[counter].read("tmp.tga");
         outImages[counter].animationDelay(delays[counter]);
-        outImages[counter].gifDisposeMethod((MagickCore::DisposeType)4);
+        outImages[counter].gifDisposeMethod((MagickCore::DisposeType)2);
         outImages[counter].rotate(180.0);
     }
     std::cout <<"Writing "<<outImages.size() <<" images.\n";
