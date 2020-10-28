@@ -4,13 +4,13 @@
 #include <MagickCore/distort.h>
 #include <SFML/Graphics.hpp>
 #include <fstream>
+#include <AsciiCmd/Animation.h>
 
 std::string ASCIITable=" .:-=+*#%@";
-
 //" .-*:o+8&#@";
 //" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
 
-bool ConvertToAscii(const std::string& inputFile, sf::Vector2f outScale, std::vector<std::vector<std::vector<std::pair<uint8_t, sf::Color>>>>& outPixels, std::vector<uint32_t>& delays, bool useColor=true)
+bool ConvertToAscii(const std::string& inputFile, sf::Vector2f outScale, std::vector<std::vector<std::vector<std::pair<uint8_t, sf::Color>>>>& outPixels, std::vector<uint32_t>& delays, bool useColor, sf::Color fillColor, float speed)
 {
     std::vector<Magick::Image> imageList;
     Magick::readImages( &imageList, inputFile );  //read frames and coalesce them
@@ -25,7 +25,7 @@ bool ConvertToAscii(const std::string& inputFile, sf::Vector2f outScale, std::ve
     for(uint32_t counter=0; counter < imageList.size(); counter++)
     {
         sf::Vector2u outsize = sf::Vector2u(imageList[counter].columns() * outScale.x, imageList[counter].rows() * outScale.y);
-        delays[counter]=imageList[counter].animationDelay();
+        delays[counter]=imageList[counter].animationDelay()/speed;
         outPixels[counter].resize(outsize.x);
         for(uint32_t counterx=0; counterx < outsize.x; counterx++)
             outPixels[counter][counterx].resize(outsize.y);
@@ -39,17 +39,23 @@ bool ConvertToAscii(const std::string& inputFile, sf::Vector2f outScale, std::ve
                 uint32_t x = counterx / outScale.x;
                 uint32_t y = countery / outScale.y;
                 uint32_t index = imageList[counter].channels() * (w * y + x);
-                outPixels[counter][counterx][countery].first=(pixels[index] * 0.3 + pixels[index + 1] *0.59 + pixels[index+2] * 0.11)/QuantumRange * 255.0f;
-                outPixels[counter][counterx][countery].first= ASCIITable.at(outPixels[counter][counterx][countery].first/256.0 * ASCIITable.size());
-                outPixels[counter][counterx][countery].second = sf::Color::White;
-                if(useColor)
-                    outPixels[counter][counterx][countery].second=sf::Color( pixels[index]/QuantumRange * 255.0f, pixels[index+1]/QuantumRange * 255.0f, pixels[index+2]/QuantumRange * 255.0f);
+                if(pixels[index+3] == 0x00)
+                    outPixels[counter][counterx][countery].first = ' ';
+                else
+                {
+                    outPixels[counter][counterx][countery].first=(pixels[index] * 0.3 + pixels[index + 1] *0.59 + pixels[index+2] * 0.11)/QuantumRange * 255.0f;
+                //outPixels[counter][counterx][countery].first=((pixels[index]+pixels[index+1]+pixels[index+2])/3.0) / QuantumRange * 255.0f;
+                    outPixels[counter][counterx][countery].first= ASCIITable.at((outPixels[counter][counterx][countery].first/256.0) * ASCIITable.size());
+                    outPixels[counter][counterx][countery].second = fillColor;
+                    if(useColor)
+                        outPixels[counter][counterx][countery].second=sf::Color( pixels[index]/QuantumRange * 255.0f, pixels[index+1]/QuantumRange * 255.0f, pixels[index+2]/QuantumRange * 255.0f);
+                }
             }
     }
     return true;
 }
 
-bool GenerateGif(const std::string& fontFile, std::vector<std::vector<std::vector<std::pair<uint8_t,sf::Color>>>>& chars, const std::string& outFile, uint32_t pointSize, std::vector<uint32_t>& delays)
+bool GenerateGif(const std::string& fontFile, std::vector<std::vector<std::vector<std::pair<uint8_t,sf::Color>>>>& chars, const std::string& outFile, uint32_t pointSize, std::vector<uint32_t>& delays, sf::Color backColor)
 {
     sf::Font Font;
     if(!Font.loadFromFile(fontFile))
@@ -70,7 +76,7 @@ bool GenerateGif(const std::string& fontFile, std::vector<std::vector<std::vecto
     text.setFillColor(sf::Color::White);
     for(uint32_t counter=0; counter < chars.size(); counter++)
     {
-        tex.clear(sf::Color::Black);
+        tex.clear(backColor);
         for(uint32_t counterx=0; counterx < chars[counter].size(); counterx++)
             for(uint32_t countery=0; countery < chars[counter][counterx].size(); countery++)
         {
@@ -81,14 +87,32 @@ bool GenerateGif(const std::string& fontFile, std::vector<std::vector<std::vecto
         }
         tex.display();
         sf::Image image = tex.getTexture().copyToImage();
-        image.saveToFile("tmp.bmp");
-        outImages[counter].read("tmp.bmp");
+        image.saveToFile("tmp.tga");
+        outImages[counter].read("tmp.tga");
         outImages[counter].animationDelay(delays[counter]);
+        outImages[counter].gifDisposeMethod((MagickCore::DisposeType)4);
+        outImages[counter].rotate(180.0);
     }
     std::cout <<"Writing "<<outImages.size() <<" images.\n";
-    Magick::writeImages(outImages.begin()+1, outImages.end(), outFile.c_str());
+    Magick::writeImages(outImages.begin(), outImages.end(), outFile.c_str());
     return true;
 }
+
+void GenerateAsciiAnimation(const std::string& outfile, std::vector<std::vector<std::vector<std::pair<uint8_t, sf::Color>>>>& outPixels, std::vector<uint32_t>& delays)
+{
+    AsciiCmd::Animation anim;
+    for(uint32_t frameCounter=0; frameCounter < outPixels.size(); frameCounter++)
+    {
+        AsciiCmd::Texture newTex(Vector2<uint32_t>(outPixels[frameCounter].size(), outPixels[frameCounter][0].size()));
+        for(uint32_t counterx=0; counterx < outPixels[frameCounter].size(); counterx++)
+            for(uint32_t countery=0; countery < outPixels[frameCounter][counterx].size(); countery++)
+            newTex.SetPixel(Vector2<uint32_t>(counterx,countery), outPixels[frameCounter][counterx][countery].first, 0x0f);
+        anim.AddFrame(newTex);
+        anim.SetFrameDelay(frameCounter, 10 * delays[frameCounter]);
+    }
+    anim.SaveToFile(outfile);
+}
+
 
 
 bool WriteAscii(const std::string& outfile, std::vector<std::vector<std::pair<uint8_t,sf::Color>>>& ascii)
@@ -109,7 +133,7 @@ bool WriteAscii(const std::string& outfile, std::vector<std::vector<std::pair<ui
 }
 
 
-bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& inFile, std::string& outFile, std::string& fontFile, uint32_t& pointSize, bool& userColor)
+bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& inFile, std::string& outFile, std::string& fontFile, uint32_t& pointSize, bool& userColor, sf::Color& backColor, bool& asciiOut, sf::Color& fillColor, float& dt)
 {
     for(int32_t currentArg=1; currentArg < argc; currentArg++)
     {
@@ -130,6 +154,16 @@ bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& i
                 std::cout <<"Use --help to get help info.\n";
                 return false;
             }
+        }
+        else
+        if(argtype == "--speed")
+        {
+            if(currentArg+1 >= argc)
+            {
+                std::cout <<"Expected time constant after --speed.\n";
+                return false;
+            }
+            dt = std::stof(argv[++currentArg]);
         }
         else
         if(argtype == "--font")
@@ -165,6 +199,36 @@ bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& i
             pointSize = std::stoi(argv[++currentArg]);
         }
         else
+        if(argtype == "--ascii")
+            asciiOut=true;
+        else
+        if(argtype == "--transparent")
+            backColor=sf::Color::Transparent;
+        else
+        if(argtype == "--backcolor")
+        {
+            if(currentArg + 3 >= argc)
+            {
+                std::cout <<"Expected r g b after back color.\n";
+                return false;
+            }
+            backColor.r = std::stoi(argv[++currentArg]);
+            backColor.g = std::stoi(argv[++currentArg]);
+            backColor.b = std::stoi(argv[++currentArg]);
+        }
+        else
+        if(argtype == "--fillcolor")
+        {
+            if(currentArg+3 >= argc)
+            {
+                std::cout <<"Expected r g b after fill color.\n";
+                return false;
+            }
+            fillColor.r = std::stoi(argv[++currentArg]);
+            fillColor.g = std::stoi(argv[++currentArg]);
+            fillColor.b = std::stoi(argv[++currentArg]);
+        }
+        else
         if(argtype == "--help")
         {
             std::cout <<"Help Info:\n";
@@ -175,6 +239,7 @@ bool HandleArguments(int argc, char* argv[], sf::Vector2f& scale, std::string& i
             std::cout <<"--out outFile : The file to save the output to (default out.gif).\n";
             std::cout <<"--scale x y : The scale of the output x and y Range (0.0,1.0] (default 1.0,1.0).\n";
             std::cout <<"--color : Uses the colors of the image when generating the gif.\n";
+            std::cout <<"--transparent: Sets the background color to be transparent rather than black.\n";
             return false;
         }
         else
@@ -197,15 +262,24 @@ int main(int argc, char* argv[])
     std::string outFile="out.gif";
     uint32_t pointSize = 12;
     std::string fontFile = "font.ttf";
+    sf::Color backColor=sf::Color::Black;
+    sf::Color fillColor=sf::Color::White;
+    float speed=1.0;
+    bool asciiOut=false;
 
-    if(!HandleArguments(argc, argv, scale, inFile, outFile, fontFile, pointSize, useColor))
+    if(!HandleArguments(argc, argv, scale, inFile, outFile, fontFile, pointSize, useColor, backColor, asciiOut, fillColor, speed))
         return 0;
 
+    std::cout <<"Converting.\n";
     std::vector<std::vector<std::vector<std::pair<uint8_t, sf::Color>>>> ascii;
     std::vector<uint32_t> delays;
-    if(!ConvertToAscii(inFile, scale,ascii, delays, useColor))
+    if(!ConvertToAscii(inFile, scale,ascii, delays, useColor,fillColor, speed))
         return 0;
-    GenerateGif("font.ttf", ascii, outFile, pointSize, delays);
+    std::cout <<"Generating.\n";
+    if(asciiOut)
+        GenerateAsciiAnimation(outFile, ascii, delays);
+    else
+        GenerateGif(fontFile, ascii, outFile, pointSize, delays, backColor);
     std::cout <<"Done.\n";
     return 0;
 }
